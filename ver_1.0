@@ -1,0 +1,262 @@
+/////////////////////////////////////////////////////////////////////////////
+// Open Haptics and OpenAL Sample Program.
+// The example shows how to play a static audio WAVE file using the OpenAL library
+// The example is displays all the properties and tools provided by openAL to play static sound in a 3d environment
+// To learn more about OpenAL read the documentation and see samples provided in the library
+//////////////////////////////////////////////////////////////////////////////
+
+#include <QHHeadersGLUT.h>//Include all necessary headers
+
+
+#include <cstdlib>
+#include <list>
+#include <fstream>
+#include <iostream>
+
+
+#include <stdio.h>
+#include <string>
+#include <sstream>
+
+#include <HDU/hduLine.h>
+#include <math.h>
+
+// --------- Headers related to audio -------------
+#include <Windows.h>
+#include "LoadFile.h"
+#include <al.h>    // OpenAL header files
+#include <alc.h>
+
+using std::list;
+using namespace std;
+
+// ***************  Related to Audio  *********************//
+// --------- OpenAL variables -----------//
+ALCdevice* audioDevice;
+ALCcontext* audioContext;
+ALenum errorCode=0;
+ALuint helloBuffer;
+ALuint helloSource;
+ALenum format;
+ALint frequency;
+// ----------------------------------//
+
+//---------------Meshes------------//
+TriMesh*skin;
+TriMesh*skull1;
+TriMesh*skull2;
+TriMesh*brain;
+Sphere*s1;
+
+static int i=0;
+string out = "score";
+
+
+// --------  Load Audio File  --------
+LoadFile File1("sample.wav");
+
+// -------- Flag for start and Pause  ------- //
+bool playFlag;
+
+// ****************************************************//
+
+// -------  Callback for haptic device  -------------//
+void MyButton2DownCallback (unsigned int ShapeID);
+void touchsound(unsigned int ShapeID);
+
+int main(int argc, char *argv[])
+{
+	// *********************   REGARDING HAPTICS   ***************************** //
+	QHGLUT* DisplayObject = new QHGLUT(argc,argv);//create a display window
+    DeviceSpace* Omni = new DeviceSpace;//Find a phantom called Omni    
+	DisplayObject->setBackgroundColor(0, 0, 0);
+    DisplayObject->tell(Omni);//tell quickHaptics that Omni exists
+	DisplayObject->disableLight(0);
+	DisplayObject->setLight(1, 2, 2, -5);
+    
+	// Find camera position
+	float FOV;
+	float NearPlane;
+	float FarPlane;
+	hduVector3Dd Eye;
+	hduVector3Dd LookAt;
+	hduVector3Dd UpVector;
+	DisplayObject->getCamera(&FOV, &NearPlane,&FarPlane, &Eye, &LookAt, &UpVector);
+
+	
+	string textual;
+	textual = to_string(i);
+	char *cstr = new char[textual.length() + 1];
+	strcpy(cstr, textual.c_str());
+	Text* score = new Text(20,cstr, 0.2, 0.9);
+	
+	
+	delete[] cstr;
+
+	
+	DisplayObject->tell(score);
+	//std::cout << "this is your score "<< textual << std::endl;
+
+
+	//----------Objects-------------//
+	s1 = new Sphere(6,50);
+	s1->setTranslation(0, 1, -210);
+	s1->setPopthrough(0.005);
+	s1->setGraphicVisibility(false);
+	//s1->setScale(1.5);
+	DisplayObject->tell(s1);
+
+	skull1=new TriMesh("Models/s3.stl");
+	skull1->setRotation(hduVector3Dd(0.0, 0.0, 1.0), 180);
+	skull1->setTranslation(0, 1, -200);
+	skull1->setRenderModeDepth();
+	skull1->dynamic(true);
+	//skull1->setPopthrough(0.05);
+	skull1->setScale(0.5);
+	skull1->setFriction(0.2, 0.2);
+	skull1->setStiffness(0.9);
+	//mymesh->setShapeColor(0, 0.1, 0.8);
+	skull1->setGraphicVisibility(true);
+
+	skull2 = new TriMesh("Models/skd.stl");
+	skull2->setRotation(hduVector3Dd(0.0, 0.0, 1.0), 180);
+	skull2->setTranslation(0, 1, -200);
+	skull2->setRenderModeDepth();
+	skull2->dynamic(true);
+	//skull1->setPopthrough(0.05);
+	skull2->setScale(0.5);
+	skull2->setFriction(0.2, 0.2);
+	skull1->setStiffness(0.9);
+	skull2->setPopthrough(0.3);
+	DisplayObject->tell(skull2);
+	
+	/*brain = new TriMesh("Models/brain.stl");
+	brain->setRenderModeFeedback();
+	DisplayObject->tell(brain);*/
+
+
+
+
+
+
+
+    Cursor* OmniCursor = new Cursor;//Declare a default cursor
+	//OmniCursor->setScale(0.5);
+
+    DisplayObject->tell(OmniCursor);//Tell Quick haptics that a cursor exists
+
+	//  *********************************************************************//
+	
+
+	//***********************   REGARDING SOUND    ********************************//
+	
+	// Create an audio device
+	audioDevice = alcOpenDevice(NULL); // NULL refers to the default device connected to the computer
+	errorCode = alcGetError(audioDevice);
+    
+	// Create an audio context
+	// One context can have one Listner and Multiple Sources and Buffers
+	audioContext = alcCreateContext(audioDevice,NULL); 
+    alcMakeContextCurrent(audioContext);
+    errorCode = alcGetError(audioDevice);
+	
+	// Create a Buffer
+	alGenBuffers(1,&helloBuffer); // Buffer stores the audio data
+	errorCode = alGetError();
+
+	// Create a source
+	alGenSources (1, &helloSource); // Virtual source from which the sound is emitted in the application
+	errorCode = alGetError();
+	
+	// Read information about the WAVE file from the Object "File1" we created
+	frequency = File1.sampleRate;
+	// Find if file is stereo or mono
+	// Find if file is 8 or 16 bit 
+	if(File1.bitsPerSample == 8){
+		if (File1.channels == 1)
+			format = AL_FORMAT_MONO8;
+		else if (File1.channels == 2)
+			format = AL_FORMAT_STEREO8;
+	}
+	else if(File1.bitsPerSample == 16){
+		if (File1.channels == 1)
+			format = AL_FORMAT_MONO16;
+		else if (File1.channels == 2)
+			format = AL_FORMAT_STEREO16;
+	}
+
+	// Fill the buffer with the information
+	alBufferData(helloBuffer,format,File1.buf,File1.dataSize,frequency);
+
+	// Attach buffer to source
+	alSourcei (helloSource, AL_BUFFER, helloBuffer);
+
+	// Properties that can affect the sound in 3D space
+	ALfloat SourcePos[] = {0.0,0.0,0.0};
+	ALfloat SourceVel[] = {0.0,0.0,0.0};
+	ALfloat ListenerPos[] = {0.0,0.0,-3.0};
+	ALfloat ListenerVel[] = {0.0,0.0,0.0};
+	ALfloat ListenerOri[] = {0.0,0.0,-1.0, 0.0, 1.0, 0.0};
+	
+	// Set the proerties created above
+	alListenerfv(AL_POSITION, ListenerPos);
+	alListenerfv(AL_VELOCITY, ListenerVel);
+	alListenerfv(AL_ORIENTATION, ListenerOri);
+		
+	alSourcef (helloSource, AL_PITCH, 1.0);
+	alSourcef (helloSource, AL_GAIN, 1.0);
+	alSourcefv (helloSource, AL_POSITION, SourcePos);
+	alSourcefv (helloSource, AL_VELOCITY, SourceVel);
+	alSourcei (helloSource, AL_LOOPING, AL_TRUE);
+
+	// Clear memory used by OpenAl by deleting everything created
+	/*
+	fclose(fp); 
+	delete[] buf;
+	alDeleteSources(1,&helloSource);
+	alDeleteBuffers(1,&helloBuffer);
+	alcMakeContextCurrent(NULL);
+	alcDestroyContext(audioContext);
+	alcCloseDevice(audioDevice);
+	*/
+	//  ******************************************************************************  //
+
+
+	Omni->button2DownCallback(MyButton2DownCallback);
+	Omni->touchCallback(touchsound,s1);
+	Omni->touchCallback(touchsound, skull1);
+	Omni->touchCallback(touchsound, skull2);
+
+    qhStart();//Set everything in motion
+    return 0;
+}
+
+void touchsound(unsigned int ShapeID)
+{
+	
+	if (ShapeID == 2)
+	{
+		i = i+1;
+		
+		skull1->setGraphicVisibility(false);
+		alSourcef(helloSource, AL_PITCH, 0.3);
+		
+	}
+	
+}
+
+void MyButton2DownCallback(unsigned int ShapeID)
+{
+	// Start or Pause the sound playing
+	if (playFlag == false)
+	{	
+		alSourcePlay(helloSource);
+		playFlag = true;
+	}
+	else
+	{
+		playFlag = false;
+		alSourcePause(helloSource);
+	}
+	
+}
