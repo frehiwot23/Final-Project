@@ -1,0 +1,723 @@
+/////////////////////////////////////////////////////////////////////////////
+// Open Haptics and OpenAL Sample Program.
+// The example shows how to play a static audio WAVE file using the OpenAL library
+// The example is displays all the properties and tools provided by openAL to play static sound in a 3d environment
+// To learn more about OpenAL read the documentation and see samples provided in the library
+//////////////////////////////////////////////////////////////////////////////
+
+#include <QHHeadersGLUT.h>//Include all necessary headers
+
+
+#include <cstdlib>
+#include <list>
+#include <fstream>
+#include <iostream>
+
+
+#include <stdio.h>
+#include <string>
+#include <sstream>
+
+#include <HDU/hduLine.h>
+#include <math.h>
+
+// --------- Headers related to audio -------------
+#include <Windows.h>
+#include "LoadFile.h"
+#include <al.h>    // OpenAL header files
+#include <alc.h>
+
+using std::list;
+using namespace std;
+
+// ***************  Related to Audio  *********************//
+// --------- OpenAL variables -----------//
+ALCdevice* audioDevice;
+ALCcontext* audioContext;
+ALenum errorCode=0;
+ALuint helloBuffer;
+ALuint helloSource;
+ALenum format;
+ALint frequency;
+// ----------------------------------//
+static hduVector3Dd Cpos;
+
+static bool varV;
+static bool varS;
+static int iPTB = 0;
+static int iPTS = 0;
+static int iPTf = 0;
+static int iV = 0;
+static float F;
+static hduVector3Dd Force;
+
+static hduVector3Dd fulcrumPoint;
+static hduVector3Dd pos;
+static hduQuaternion ori;
+static hduQuaternion unitVector(0, hduVector3Dd(0, 0, 1));
+static hduVector3Dd p0;
+static hduVector3Dd p1;
+static hduVector3Dd newPos;
+static float gain = 0.5;
+static hduVector3Dd forceF;
+static hduVector3Dd forceL;
+static float length;
+static float maxForce = 0.6;
+static hduVector3Dd accumForce;
+static hduVector3Dd newForce;
+static float forceLength;
+static HDdouble nominalMaxForce;
+static hduVector3Dd vibrForce;
+static int cnt = 0;
+
+
+//---------------Meshes------------//
+Sphere*s1;
+TriMesh*skin;
+TriMesh*pointer;
+TriMesh*skull1;
+TriMesh*skull2;
+TriMesh*brain;
+TriMesh*ventricles;
+
+Sphere*s2;
+Sphere*s3;
+Sphere*s4;
+Sphere*s5;
+Sphere*s6;
+Sphere*s7;
+Sphere*s8;
+Sphere*s9;
+Sphere*s10;
+Sphere*s11;
+Box*b1;
+
+Cursor* OmniCursor;
+static hduVector3Dd CPosition;
+static int i=0;
+string out = "score";
+string textual;
+string all;
+char *cstr;
+
+hduMatrix align2;
+Text* score;
+
+
+static bool venv;
+static bool skv;
+
+// --------  Load Audio File  --------
+LoadFile File1("sample.wav");
+
+// -------- Flag for start and Pause  ------- //
+bool playFlag;
+
+// ****************************************************//
+
+// -------  Callback for haptic device  -------------//
+void myMotionCallback(unsigned int ShapeID);
+void ButtonDown (unsigned int ShapeID);
+void ButtonUp(unsigned int ShapeID);
+void touchsound(unsigned int ShapeID);
+void untouchsound(unsigned int ShapeID);
+void Button2(unsigned int ShapeID);
+void Graphics1(void);
+QHGLUT* DisplayObject;
+DeviceSpace* Omni = new DeviceSpace;
+
+void HLCALLBACK startEffectCB(HLcache* cache, void* userData);
+void HLCALLBACK computeForceCB(HDdouble force[3], HLcache *cache, void * userData);
+void HLCALLBACK stopEffectCB(HLcache *cache, void * userData);
+
+
+int main(int argc, char *argv[])
+{
+	// *********************   REGARDING HAPTICS   ***************************** //
+	DisplayObject = new QHGLUT(argc,argv);//create a display window
+    //Find a phantom called Omni    
+	DisplayObject->setBackgroundColor(0, 0, 0);
+    DisplayObject->tell(Omni);//tell quickHaptics that Omni exists
+	DisplayObject->disableLight(0);
+	DisplayObject->setLight(1, 2, 2, 40);
+    
+	PlaySound(TEXT("welcome.wav"), NULL, SND_FILENAME | SND_ASYNC);
+
+
+	// Find camera position
+	float FOV;
+	float NearPlane;
+	float FarPlane;
+	hduVector3Dd Eye;
+	hduVector3Dd LookAt;
+	hduVector3Dd UpVector;
+	DisplayObject->getCamera(&FOV, &NearPlane,&FarPlane, &Eye, &LookAt, &UpVector);
+	
+	//score->setGraphicVisibility(false);
+	
+	textual = to_string(i);
+	all = out + textual;
+	cstr = new char[textual.length() + 1];
+	strcpy(cstr, all.c_str());
+	score = new Text(20,cstr, 0.2, 0.9);
+	//DisplayObject->tell(score);
+	
+	delete[] cstr;
+
+	
+	DisplayObject->tell(score);
+	//std::cout << "this is your score "<< textual << std::endl;
+
+
+	//----------Objects-------------//
+	b1 = new Box(7,5,0.01);
+	b1->setTranslation(-23, 2, 28);
+	//b1->setGraphicVisibility(false);
+	//b1->setHapticVisibility(false);
+	DisplayObject->tell(b1);
+
+	s1 = new Sphere(1,10);
+	s1->setTranslation(0, 2, 25);
+	//s1->setPopthrough(0.005);
+	//s1->setGraphicVisibility(false);
+	//s1->setScale(1.5);
+	DisplayObject->tell(s1);
+
+	skin = new TriMesh("Models/skin.stl");
+	skin->setRotation(hduVector3Dd(0.0, 0.0, 1.0), 180);
+	//skin->setTranslation(0, 1, -200);
+	skin->setRenderModeFeedback();
+	skin->dynamic(true);
+	//skull1->setPopthrough(0.05);
+	skin->setScale(0.125);
+	skin->setFriction(0.2, 0.2);
+	skin->setStiffness(0.9);
+	//mymesh->setShapeColor(0, 0.1, 0.8);
+	skin->setGraphicVisibility(true);
+	DisplayObject->tell(skin);
+
+	skull1=new TriMesh("Models/skull1.stl");
+	skull1->setRotation(hduVector3Dd(0.0, 0.0, 1.0), 180);
+	//skull1->setTranslation(0, 1, -200);
+	skull1->setRenderModeDepth();
+	skull1->dynamic(true);
+	//skull1->setPopthrough(0.05);
+	skull1->setScale(0.125);
+	skull1->setFriction(0.2, 0.2);
+	skull1->setStiffness(0.9);
+	//mymesh->setShapeColor(0, 0.1, 0.8);
+	skull1->setGraphicVisibility(true);
+	DisplayObject->tell(skull1);
+
+	skull2 = new TriMesh("Models/skull2.stl");
+	skull2->setRotation(hduVector3Dd(0.0, 0.0, 1.0), 180);
+	//skull2->setRotation(hduVector3Dd(0.0, 1.0, 0.0), 210);
+	//skull2->setTranslation(0, 1, -200);
+	skull2->setRenderModeDepth();
+	skull2->dynamic(true);
+	//skull1->setPopthrough(0.05);
+	skull2->setScale(0.125);
+	skull2->setFriction(0.2, 0.2);
+	skull1->setStiffness(0.9);
+	skull2->setPopthrough(0.3);
+	DisplayObject->tell(skull2);
+	
+	/*brain = new TriMesh("Models/brain.stl");
+	brain->setRenderModeFeedback();
+	DisplayObject->tell(brain);*/
+
+	ventricles = new TriMesh("Models/ventricles2.stl");
+	ventricles->setRotation(hduVector3Dd(0.0, 0.0, 1.0), 180);
+	//ventricles->setTexture("Models/br.jpg");
+	ventricles->setRenderModeFeedback();
+	ventricles-> dynamic(true);
+	ventricles->setScale(0.125);
+	ventricles->setDamping(0.3);
+	//ventricles->setTranslation(0, 1, -200);
+	DisplayObject->tell(ventricles);
+
+	s2 = new Sphere(2, 10);
+	s2->setTranslation(-5,6, 15);
+	//s2->setGraphicVisibility(false);
+	DisplayObject->tell(s2);
+
+	
+
+	s3 = new Sphere(1, 10);
+	s3->setTranslation(-2, 6, 17);
+	//s3->setGraphicVisibility(false);
+	DisplayObject->tell(s3);
+
+	s4 = new Sphere(1, 10);
+	s4->setTranslation(-2, 4.5, 18);
+	//s4->setGraphicVisibility(false);
+	DisplayObject->tell(s4);
+
+	s5 = new Sphere(1, 10);
+	s5->setTranslation(-2.5, 3, 18);
+	//s5->setGraphicVisibility(false);
+	DisplayObject->tell(s5);
+
+	s6 = new Sphere(1, 10);
+	s6->setTranslation(-3, 0.5, 18);
+	//s3->setGraphicVisibility(false);
+	DisplayObject->tell(s6);
+
+	s7 = new Sphere(1, 10);
+	s7->setTranslation(0.2, 6.5, 15);
+	//s5->setGraphicVisibility(false);
+	DisplayObject->tell(s7);
+
+	s8 = new Sphere(1, 10);
+	s8->setTranslation(0.8, 5, 17);
+	//s5->setGraphicVisibility(false);
+	DisplayObject->tell(s8);
+
+	s9 = new Sphere(1, 10);
+	s9->setTranslation(0.2, 3, 18);
+	//s5->setGraphicVisibility(false);
+	DisplayObject->tell(s9);
+
+
+	s10 = new Sphere(1, 10);
+	s10->setTranslation(0.7, 2, 18);
+	//s5->setGraphicVisibility(false);
+	DisplayObject->tell(s10);
+
+	s11 = new Sphere(1, 10);
+	s11->setTranslation(2, 1.8, -153);
+	//s5->setGraphicVisibility(false);
+	//isplayObject->tell(s11);
+
+
+   OmniCursor = new Cursor("Models/catheter.stl");//Declare a default cursor
+   OmniCursor->scaleCursor(0.005);
+   pointer = OmniCursor->getTriMeshPointer();
+   OmniCursor->setRelativeShapeOrientation(1.0, 1.0, 1.0, -90);
+   DisplayObject->tell(OmniCursor);//Tell Quick haptics that a cursor exists
+
+	//  *********************************************************************//
+	
+
+	//***********************   REGARDING SOUND    ********************************//
+	
+	// Create an audio device
+	audioDevice = alcOpenDevice(NULL); // NULL refers to the default device connected to the computer
+	errorCode = alcGetError(audioDevice);
+    
+	// Create an audio context
+	// One context can have one Listner and Multiple Sources and Buffers
+	audioContext = alcCreateContext(audioDevice,NULL); 
+    alcMakeContextCurrent(audioContext);
+    errorCode = alcGetError(audioDevice);
+	
+	// Create a Buffer
+	alGenBuffers(1,&helloBuffer); // Buffer stores the audio data
+	errorCode = alGetError();
+
+	// Create a source
+	alGenSources (1, &helloSource); // Virtual source from which the sound is emitted in the application
+	errorCode = alGetError();
+	
+	// Read information about the WAVE file from the Object "File1" we created
+	frequency = File1.sampleRate;
+	// Find if file is stereo or mono
+	// Find if file is 8 or 16 bit 
+	if(File1.bitsPerSample == 8){
+		if (File1.channels == 1)
+			format = AL_FORMAT_MONO8;
+		else if (File1.channels == 2)
+			format = AL_FORMAT_STEREO8;
+	}
+	else if(File1.bitsPerSample == 16){
+		if (File1.channels == 1)
+			format = AL_FORMAT_MONO16;
+		else if (File1.channels == 2)
+			format = AL_FORMAT_STEREO16;
+	}
+
+	// Fill the buffer with the information
+	alBufferData(helloBuffer,format,File1.buf,File1.dataSize,frequency);
+
+	// Attach buffer to source
+	alSourcei (helloSource, AL_BUFFER, helloBuffer);
+
+	// Properties that can affect the sound in 3D space
+	ALfloat SourcePos[] = {0.0,0.0,0.0};
+	ALfloat SourceVel[] = {0.0,0.0,0.0};
+	ALfloat ListenerPos[] = {0.0,0.0,-3.0};
+	ALfloat ListenerVel[] = {0.0,0.0,0.0};
+	ALfloat ListenerOri[] = {0.0,0.0,-1.0, 0.0, 1.0, 0.0};
+	
+	// Set the proerties created above
+	alListenerfv(AL_POSITION, ListenerPos);
+	alListenerfv(AL_VELOCITY, ListenerVel);
+	alListenerfv(AL_ORIENTATION, ListenerOri);
+		
+	alSourcef (helloSource, AL_PITCH, 1.0);
+	alSourcef (helloSource, AL_GAIN, 1.0);
+	alSourcefv (helloSource, AL_POSITION, SourcePos);
+	alSourcefv (helloSource, AL_VELOCITY, SourceVel);
+	alSourcei (helloSource, AL_LOOPING, AL_TRUE);
+
+	// Clear memory used by OpenAl by deleting everything created
+	/*
+	fclose(fp); 
+	delete[] buf;
+	alDeleteSources(1,&helloSource);
+	alDeleteBuffers(1,&helloBuffer);
+	alcMakeContextCurrent(NULL);
+	alcDestroyContext(audioContext);
+	alcCloseDevice(audioDevice);
+	*/
+	//  ******************************************************************************  //
+
+
+	Omni->button1DownCallback(ButtonDown,ventricles);
+	Omni->button1DownCallback(ButtonDown, skull2);
+	Omni->touchCallback(touchsound);
+	Omni->touchCallback(touchsound);
+	Omni->unTouchCallback(untouchsound);
+	Omni->button1UpCallback(ButtonUp, ventricles);
+	Omni->motionCallback(myMotionCallback);
+	Omni->button1UpCallback(ButtonUp, skull2);
+	Omni->startServoLoopCallback(startEffectCB, computeForceCB, stopEffectCB, NULL);
+	DisplayObject->preDrawCallback(Graphics1);
+
+    qhStart();//Set everything in motion
+    return 0;
+}
+
+void touchsound(unsigned int ShapeID)
+{
+	iV = 1;
+	std::cout << "Shape ID" << ShapeID << std::endl;
+	if (ShapeID == 5)
+	{
+		i = 1;
+		
+		skull1->setGraphicVisibility(false);
+		skin->setGraphicVisibility(false);
+		alSourcef(helloSource, AL_PITCH, 0.3);
+		
+		iPTS = 0;
+		iPTf = 0;
+		iV = 0;
+		
+	}
+	if (ShapeID == 6)
+	{
+		PlaySound(TEXT("drill.wav"), NULL, SND_FILENAME | SND_ASYNC);
+		iPTS = 0;
+		iPTf = 0;
+		iV = 0;
+	}
+	if (ShapeID == 7)
+	{
+		PlaySound(TEXT("drill.wav"), NULL, SND_FILENAME | SND_ASYNC);
+		iPTS = 0;
+		iPTf = 0;
+		iV = 0;
+	}
+	
+	if (ShapeID == 4)
+	{
+		i = i + 5;
+		if (i == 5) {
+			score->setGraphicVisibility(false);
+			textual = to_string(i);
+			all = out + textual;
+			cstr = new char[textual.length() + 1];
+			strcpy(cstr, all.c_str());
+			score = new Text(20, cstr, 0.2, 0.9);
+			DisplayObject->tell(score);
+			delete[] cstr;
+			iPTS = 0;
+			iPTf = 0;
+			iV = 0;
+		}
+	}
+	
+	if (ShapeID == 3)
+	{
+		pointer->setTexture("Models/green.jpg");
+	}
+		//pointer->setTexture("Models/green.jpg");
+	
+}
+void untouchsound(unsigned int ShapeID)
+{
+
+
+	if (ShapeID == 6)
+	{
+		i = i + 1;
+
+		skull1->setGraphicVisibility(false);
+		skin->setGraphicVisibility(false);
+		skull1->setHapticVisibility(false);
+		skin->setHapticVisibility(false);
+		if ((Force.magnitude() >= 1.5))
+		{
+			skin->setTouchableFace("Back");
+			//Omni->setFriction(0.5, 0.3);
+			//V->setShapeColor(0, 0, 0);
+			iPTS = 1;
+			iPTf = 1;
+
+		}
+		else if ((Force.magnitude() < 1.5 || Force.magnitude() > 0.3)) //&& (Force.magnitude() > 0.1)) 
+		{
+			skin->setTouchableFace("Front");
+			//Omni->setFriction(0.0, 0.0); // gain and magnitude of friction
+			//V->setShapeColor(1, 1, 1);
+			iPTS = 0;
+		}
+
+	}
+	
+	if (ShapeID == 5)
+	{
+		PlaySound(TEXT("rupture.wav"), NULL, SND_FILENAME | SND_ASYNC);
+		if ((Force.magnitude() >= 1.5))
+		{
+			//Omni->setDamping(0.9, 0.9);
+			skull1->setTouchableFace("Back");
+			iPTB = 1;
+			iPTf = 1;
+
+		}
+		else if ((Force.magnitude() < 1.5 || Force.magnitude() > 0.1))
+		{
+			skull1->setTouchableFace("Front");
+			//Omni->setDamping(0.0, 0.0);
+			iPTB = 0;
+
+		}
+	}
+
+
+	
+
+}
+/*
+void MyButton1DownCallback(unsigned int ShapeID)
+{
+	/*OmniCursor = new Cursor("models/free_injector_OBJ.obj");
+	DisplayObject->tell(OmniCursor);
+	// Start or Pause the sound playing
+	if (playFlag == false)
+	{	
+		alSourcePlay(helloSource);
+		playFlag = true;
+	}
+	else
+	{
+		playFlag = false;
+		alSourcePause(helloSource);
+	}
+	
+	venv = false;
+	skv = false;
+	ventricles->setHapticVisibility(true);
+	skull2->setHapticVisibility(true);
+
+}
+void Button2(unsigned int ShapeID)
+{
+	venv = false;
+	skv = false;
+	
+	if (ShapeID == 7)
+	{
+		venv = true;
+	}
+	if (ShapeID == 6) {
+		skv = true;
+	}
+
+}
+void Graphics1() {
+	hduMatrix align;
+	if (venv)
+	{
+		align = ventricles->getTransform();
+		skull2->setTransform(align);
+	}
+	if (skv)
+	{
+		align = skull2->getTransform();
+		ventricles->setTransform(align);
+	}
+
+}*/
+
+void Graphics1() {
+
+	/*hduMatrix globalDragTransform;
+	hduMatrix globalDragTransform2;
+
+
+
+		if (venv) {
+			globalDragTransform = ventricles->getTransform();
+			skull2->setTransform(globalDragTransform);
+
+		}
+		else if (skv) {
+			globalDragTransform2 = skull2->getTransform();
+			ventricles->setTransform(globalDragTransform2);
+
+		}*/
+	}
+
+
+void ButtonDown(unsigned int ShapeID) {
+	TriMesh* bodypart = TriMesh::searchTriMesh(ShapeID);
+	venv = false;
+	skv = false;
+	if (bodypart == ventricles) {
+		venv = true;
+		skull2->setHapticVisibility(false);
+	}
+
+	else if (bodypart == skull2) {
+		skv = true;
+		ventricles->setHapticVisibility(false);
+
+	}
+}
+
+void ButtonUp(unsigned int ShapeID) {
+	venv = false;
+	skv = false;
+	ventricles->setHapticVisibility(true);
+	skull2->setHapticVisibility(true);
+
+
+}
+
+void myMotionCallback(unsigned int ShapeID)
+{
+	CPosition = OmniCursor->getPosition();
+	std::cout << "Postion  " << CPosition << std::endl;
+	if (iPTf == 1)
+	{
+		fulcrumPoint = OmniCursor->getPosition();
+	}
+	Force = Omni->getForce();
+}
+void HLCALLBACK computeForceCB(HDdouble force[3], HLcache *cache, void * userData)
+{
+	if (iPTf == 1)
+	{
+		iPTf = 0;
+		hlCacheGetDoublev(cache, HL_PROXY_POSITION, fulcrumPoint);
+		/*std::cout << "New Force" << fulcrumPoint << std::endl;*/
+	}
+	if (iPTB == 1) //fulcrum effect for brain
+	{
+
+		hlCacheGetDoublev(cache, HL_PROXY_POSITION, pos);
+		hlCacheGetDoublev(cache, HL_PROXY_ROTATION, ori);
+
+		unitVector = ori.conjugate() * unitVector * ori;
+		p0 = fulcrumPoint;
+		p1 = fulcrumPoint + unitVector.v();
+
+		hduLine <float> line(p0, p1);
+		newPos = line.project(pos);
+
+		forceF = (newPos - pos) * gain;
+		length = forceF.magnitude();
+		if (length > maxForce)
+		{
+			forceF.normalize();
+			forceF *= maxForce;
+		}
+
+		if (forceLength > nominalMaxForce * 0.5)
+		{
+			newForce.normalize();
+			newForce *= nominalMaxForce * 0.5;
+		}
+		hdGetDoublev(HD_CURRENT_FORCE, accumForce);
+		hdGetDoublev(HD_NOMINAL_MAX_FORCE, &nominalMaxForce);
+		forceLength = newForce.magnitude();
+	}
+
+	if (iPTS == 1) //line effect for bone
+	{
+		hlCacheGetDoublev(cache, HL_PROXY_POSITION, pos);
+		hlCacheGetDoublev(cache, HL_PROXY_ROTATION, ori);
+
+		unitVector = ori.conjugate() * unitVector * ori;
+		p0 = fulcrumPoint;
+		p1 = fulcrumPoint + unitVector.v();
+
+		hduLine <float> line(p0, p1);
+		newPos = line.direction();
+
+		forceL = (newPos - pos) * gain;
+		//forceL = (newPos) * gain;
+		length = forceL.magnitude();
+		if (length > maxForce)
+		{
+			forceL.normalize();
+			forceL *= maxForce;
+		}
+
+		hdGetDoublev(HD_CURRENT_FORCE, accumForce);
+		hdGetDoublev(HD_NOMINAL_MAX_FORCE, &nominalMaxForce);
+		forceLength = newForce.magnitude();
+		if (forceLength > nominalMaxForce * 0.5)
+		{
+			newForce.normalize();
+			newForce *= nominalMaxForce * 0.5;
+		}
+	}
+
+	if (iV == 1) {
+		if (((cnt % 16) >= 0 && (cnt % 16) < 4) || ((cnt % 16) >= 8 && (cnt % 8) < 12))
+			vibrForce = hduVector3Dd(0, 0, 0);
+		else if ((cnt % 16) >= 4 && (cnt % 16) < 8)
+			vibrForce = hduVector3Dd(0, 0, 1);
+		else
+			vibrForce = hduVector3Dd(0, 0, -1);
+		cnt++;
+	}
+
+	if (iV == 0)
+	{
+		vibrForce = hduVector3Dd(0, 0, 0);
+	}
+
+	if (cnt >= 1024) {
+		cnt = 0;
+		iV = 0;
+	}
+
+	if (iPTB == 0)
+	{
+		accumForce = hduVector3Dd(0, 0, 0);
+		forceF = hduVector3Dd(0, 0, 0);
+	}
+
+	if (iPTS == 0)
+	{
+		forceL = hduVector3Dd(0, 0, 0);
+		accumForce = hduVector3Dd(0, 0, 0);
+	}
+
+	/*std::cout << "New Force" << newForce << std::endl;*/
+	newForce = forceF + accumForce + vibrForce + forceL;
+	hdSetDoublev(HD_CURRENT_FORCE, newForce);
+}
+void HLCALLBACK startEffectCB(HLcache* cache, void* userData)
+{
+	printf("a");
+}
+void HLCALLBACK stopEffectCB(HLcache* cache, void* userData)
+{
+	printf("a");
+}
